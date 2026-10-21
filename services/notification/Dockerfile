@@ -1,37 +1,44 @@
-# Stage 1: Build
-FROM node:18-alpine AS builder
+FROM node:20-alpine AS build
 
-WORKDIR /app
+ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+WORKDIR /workspace
+RUN corepack enable
 
-COPY package*.json ./
-RUN npm ci
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY apps/mobile/package.json apps/mobile/
+COPY apps/web/package.json apps/web/
+COPY packages/analytics/package.json packages/analytics/
+COPY packages/codegen/package.json packages/codegen/
+COPY packages/contracts/package.json packages/contracts/
+COPY packages/reputation/package.json packages/reputation/
+COPY packages/sdk/package.json packages/sdk/
+COPY packages/types/package.json packages/types/
+COPY services/analytics-oracle/package.json services/analytics-oracle/
+COPY services/dm-relay/package.json services/dm-relay/
+COPY services/indexer/package.json services/indexer/
+COPY services/media/package.json services/media/
+COPY services/notification/package.json services/notification/
+COPY services/search/package.json services/search/
+RUN pnpm install --frozen-lockfile --filter "@linkora/notification..."
 
-COPY . .
-RUN npm run build
+COPY packages/types ./packages/types
+COPY services/notification ./services/notification
+RUN pnpm --filter @linkora/notification build
 
-# Stage 2: Production
-FROM node:18-alpine
-
+FROM node:20-alpine AS runtime
 ENV NODE_ENV=production
-
+WORKDIR /app
 RUN apk add --no-cache curl
 
-RUN addgroup -g 1001 -S appgroup && \
-    adduser -S appuser -u 1001 -G appgroup
+COPY --from=build --chown=node:node /workspace/node_modules ./node_modules
+COPY --from=build --chown=node:node /workspace/services/notification/node_modules ./services/notification/node_modules
+COPY --from=build --chown=node:node /workspace/services/notification/package.json ./services/notification/package.json
+COPY --from=build --chown=node:node /workspace/services/notification/dist ./services/notification/dist
+COPY --from=build --chown=node:node /workspace/packages/types ./packages/types
 
-WORKDIR /app
-
-COPY package*.json ./
-RUN npm ci --omit=dev
-
-COPY --from=builder /app/dist ./dist
-
-RUN chown -R appuser:appgroup /app
-
-USER appuser
-
+USER node
+WORKDIR /app/services/notification
 EXPOSE 3002
-
 HEALTHCHECK --interval=10s --timeout=5s --retries=3 --start-period=30s \
   CMD curl -f http://localhost:3002/health/ready || exit 1
 

@@ -4,9 +4,8 @@ let pool: Pool | null = null;
 
 export function getDbPool(): Pool {
   if (!pool) {
-    const connectionString =
-      process.env["DATABASE_URL"] ??
-      "postgresql://postgres:postgrespassword@localhost:5432/linkora_search_test";
+    const connectionString = process.env["DATABASE_URL"];
+    if (!connectionString) throw new Error("DATABASE_URL must be configured for the search service");
     pool = new Pool({
       connectionString,
       max: 5,

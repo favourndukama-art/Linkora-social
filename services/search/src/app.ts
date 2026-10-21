@@ -12,6 +12,7 @@ import { z } from "zod";
 import { logger } from "./logger";
 import { getPool } from "./db";
 import { searchAll, searchProfiles, searchPosts } from "./search";
+import { cachedSearch } from "./cache";
 
 // ---------------------------------------------------------------------------
 // Input validation schemas
@@ -64,8 +65,14 @@ export function createApp(): Application {
   // ---------------------------------------------------------------------------
 
   /** GET /health */
-  app.get("/health", (_req: Request, res: Response) => {
-    res.json({ status: "ok", service: "search" });
+  app.get("/health", async (_req: Request, res: Response) => {
+    try {
+      await getPool().query("SELECT 1");
+      res.json({ status: "ok", service: "search", db: "connected" });
+    } catch (err) {
+      logger.error({ err }, "search health check failed");
+      res.status(503).json({ status: "error", service: "search", db: "unreachable" });
+    }
   });
 
   /**
@@ -77,7 +84,7 @@ export function createApp(): Application {
     const { q, limit } = (req as Request & { validatedQuery: z.infer<typeof searchQuerySchema> })
       .validatedQuery;
     try {
-      const results = await searchAll(getPool(), q, limit);
+      const results = await cachedSearch(q, "all", limit ?? 20, () => searchAll(getPool(), q, limit));
       res.json({ results });
     } catch (err) {
       logger.error({ err, q }, "search/all error");
@@ -97,7 +104,7 @@ export function createApp(): Application {
       const { q, limit } = (req as Request & { validatedQuery: z.infer<typeof searchQuerySchema> })
         .validatedQuery;
       try {
-        const results = await searchProfiles(getPool(), q, limit);
+        const results = await cachedSearch(q, "profiles", limit ?? 20, () => searchProfiles(getPool(), q, limit));
         res.json({ results });
       } catch (err) {
         logger.error({ err, q }, "search/profiles error");
@@ -118,7 +125,7 @@ export function createApp(): Application {
       const { q, limit } = (req as Request & { validatedQuery: z.infer<typeof searchQuerySchema> })
         .validatedQuery;
       try {
-        const results = await searchPosts(getPool(), q, limit);
+        const results = await cachedSearch(q, "posts", limit ?? 20, () => searchPosts(getPool(), q, limit));
         res.json({ results });
       } catch (err) {
         logger.error({ err, q }, "search/posts error");

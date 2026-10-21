@@ -1,86 +1,45 @@
-import express, { type Application, Request, Response } from "express";
-import helmet from "helmet";
-import { Pool } from "pg";
+import "./tracing";
+import { createApp } from "./app";
+import { closeDbPool, getPool } from "./db";
+import { closeSearchCache, startSearchCacheInvalidationListener } from "./cache";
+import { logger } from "./logger";
 
-const PORT = parseInt(process.env.PORT ?? "3002", 10);
-const DATABASE_URL = process.env.DATABASE_URL;
+const app = createApp();
+const port = Number.parseInt(process.env["PORT"] ?? "3004", 10);
+const host = process.env["HOST"] ?? "0.0.0.0";
+const server = app.listen(port, host, () => logger.info({ port, host }, "search service listening"));
 
-const app: Application = express();
-app.use(helmet());
-app.use(express.json());
+let shuttingDown = false;
+const invalidationListener = startSearchCacheInvalidationListener(getPool());
 
-// PostgreSQL connection pool
-const pool = new Pool({ connectionString: DATABASE_URL });
+async function shutdown(signal: NodeJS.Signals): Promise<void> {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  logger.info({ signal }, "search service shutdown started");
 
-// ── Health endpoint ────────────────────────────────────────────────────────
-app.get("/health", async (_req: Request, res: Response) => {
-  try {
-    await pool.query("SELECT 1");
-    res.json({ status: "ok", service: "search", db: "connected" });
-  } catch (_err) {
-    res.status(503).json({ status: "error", service: "search", db: "unreachable" });
-  }
-});
-
-// ── Readiness probe ────────────────────────────────────────────────────────
-app.get("/health/ready", (_req: Request, res: Response) => {
-  res.json({ status: "ready", service: "search" });
-});
-
-// ── Search endpoint ────────────────────────────────────────────────────────
-// GET /search?q=<query>&type=profiles|posts&limit=20&offset=0
-app.get("/search", async (req: Request, res: Response) => {
-  const q = String(req.query.q ?? "").trim();
-  const type = String(req.query.type ?? "posts");
-  const limit = Math.min(parseInt(String(req.query.limit ?? "20"), 10), 100);
-  const offset = parseInt(String(req.query.offset ?? "0"), 10);
-
-  if (!q) {
-    res.status(400).json({ error: "query parameter 'q' is required" });
-    return;
-  }
+  const closed = new Promise<void>((resolve) => server.close(() => resolve()));
+  let timeout: NodeJS.Timeout | undefined;
+  const timedOut = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => reject(new Error("HTTP request drain timed out")), 10_000);
+    timeout.unref();
+  });
 
   try {
-    if (type === "profiles") {
-      const { rows } = await pool.query(
-        `SELECT address, display_name, bio, avatar_url
-           FROM profiles
-          WHERE to_tsvector('english', coalesce(display_name,'') || ' ' || coalesce(bio,''))
-                @@ plainto_tsquery('english', $1)
-          ORDER BY display_name
-          LIMIT $2 OFFSET $3`,
-        [q, limit, offset]
-      );
-      res.json({ type: "profiles", results: rows });
-    } else {
-      const { rows } = await pool.query(
-        `SELECT id, author, content, created_at
-           FROM posts
-          WHERE to_tsvector('english', content)
-                @@ plainto_tsquery('english', $1)
-          ORDER BY created_at DESC
-          LIMIT $2 OFFSET $3`,
-        [q, limit, offset]
-      );
-      res.json({ type: "posts", results: rows });
-    }
-  } catch (_err) {
-    res.status(500).json({ error: "search query failed" });
+    await Promise.race([closed, timedOut]);
+    if (timeout) clearTimeout(timeout);
+    const stopInvalidationListener = await invalidationListener;
+    await stopInvalidationListener();
+    await Promise.all([closeDbPool(), closeSearchCache()]);
+    logger.info({ signal }, "search service shutdown complete");
+    process.exit(0);
+  } catch (err) {
+    logger.error({ err, signal }, "search service shutdown timed out");
+    await closeSearchCache();
+    process.exit(1);
   }
-});
-
-// ── Start server ───────────────────────────────────────────────────────────
-const server = app.listen(PORT, () => {
-  console.log(`[search] listening on port ${PORT}`);
-});
-
-// Graceful shutdown
-function shutdown() {
-  server.close(() => process.exit(0));
-  setTimeout(() => process.exit(1), 10_000).unref();
 }
 
-process.on("SIGTERM", shutdown);
-process.on("SIGINT", shutdown);
+process.on("SIGTERM", (signal) => void shutdown(signal));
+process.on("SIGINT", (signal) => void shutdown(signal));
 
-export default app;
+export { app };

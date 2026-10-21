@@ -179,7 +179,8 @@ services:
   notification:
     image: linkora-notification:latest
     build:
-      context: ./services/notification
+      context: .
+      dockerfile: services/notification/Dockerfile
     restart: unless-stopped
     env_file:
       - path: .env
@@ -208,7 +209,8 @@ services:
   search:
     image: linkora-search:latest
     build:
-      context: ./services/search
+      context: .
+      dockerfile: services/search/Dockerfile
     restart: unless-stopped
     env_file:
       - path: .env
@@ -216,7 +218,9 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-linkora}:${POSTGRES_PASSWORD:-linkora}@postgres:5432/${POSTGRES_DB:-linkora}
       PORT: ${SEARCH_PORT:-3004}
+      HOST: ${SEARCH_HOST:-0.0.0.0}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
     ports:
       - "3004:3004"
     networks:
