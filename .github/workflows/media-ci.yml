@@ -35,6 +35,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Validate media OpenAPI specification
+        run: npx --yes @apidevtools/swagger-cli@4.0.4 validate services/media/openapi.yaml
+
       - name: Sharp build step
         run: |
           pnpm --filter @linkora/media run build:sharp || true

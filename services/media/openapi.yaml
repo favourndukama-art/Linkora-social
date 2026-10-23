@@ -1,0 +1,149 @@
+openapi: 3.0.3
+info:
+  title: Linkora Media API
+  version: 1.0.0
+  description: Upload and manage post media, and resize image payloads.
+servers:
+  - url: https://api.linkora.social
+paths:
+  /api/posts/media/config:
+    get:
+      summary: Get upload limits and allowed image types
+      responses:
+        '200':
+          description: Current upload configuration
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [max_upload_bytes, allowed_image_types]
+                properties:
+                  max_upload_bytes:
+                    type: integer
+                    minimum: 1
+                  allowed_image_types:
+                    type: array
+                    items:
+                      type: string
+                      enum: [image/jpeg, image/png, image/webp]
+  /api/posts/media:
+    post:
+      summary: Upload a media file
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: File stored successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MediaUpload'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMedia'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/posts/media/{filename}:
+    get:
+      summary: Retrieve a stored media file
+      parameters:
+        - $ref: '#/components/parameters/Filename'
+      responses:
+        '200':
+          description: Media file bytes
+          content:
+            image/jpeg: { schema: { type: string, format: binary } }
+            image/png: { schema: { type: string, format: binary } }
+            image/webp: { schema: { type: string, format: binary } }
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      summary: Delete a stored media file
+      parameters:
+        - $ref: '#/components/parameters/Filename'
+      responses:
+        '204':
+          description: Media file deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /resize:
+    post:
+      summary: Resize and convert an image to WebP
+      parameters:
+        - in: query
+          name: width
+          schema: { type: integer, minimum: 1, maximum: 4096, default: 800 }
+        - in: query
+          name: height
+          schema: { type: integer, minimum: 1, maximum: 4096, default: 600 }
+      requestBody:
+        required: true
+        content:
+          image/*:
+            schema:
+              type: string
+              format: binary
+      responses:
+        '200':
+          description: Resized image
+          content:
+            image/webp:
+              schema: { type: string, format: binary }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '422':
+          description: Image processing failed
+  /health:
+    get:
+      summary: Media service health check
+      responses:
+        '200':
+          description: Service and image-processing library status
+  /health/ready:
+    get:
+      summary: Media service readiness check
+      responses:
+        '200':
+          description: Service is ready
+components:
+  parameters:
+    Filename:
+      in: path
+      name: filename
+      required: true
+      schema:
+        type: string
+        maxLength: 255
+        pattern: '^[A-Za-z0-9._-]+$'
+  schemas:
+    MediaUpload:
+      type: object
+      required: [url, size]
+      properties:
+        url: { type: string, format: uri-reference }
+        size: { type: integer, minimum: 1 }
+  responses:
+    BadRequest:
+      description: Malformed request or missing file
+    TooLarge:
+      description: Upload exceeds the configured size limit
+    UnsupportedMedia:
+      description: Unsupported media type
+    NotFound:
+      description: Media file does not exist
+    ServerError:
+      description: Unexpected storage or processing error

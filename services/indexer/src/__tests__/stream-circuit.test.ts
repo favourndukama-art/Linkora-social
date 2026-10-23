@@ -62,6 +62,11 @@ describe("isRetriableStreamError", () => {
     expect(isRetriableStreamError(new TypeError("cannot read property of undefined"))).toBe(false);
     expect(isRetriableStreamError(null)).toBe(false);
   });
+
+  it("classifies known pool timeout messages as transient", () => {
+    expect(isRetriableStreamError(new Error("connection terminated unexpectedly"))).toBe(true);
+    expect(isRetriableStreamError(new Error("too many clients already"))).toBe(true);
+  });
 });
 
 describe("StreamCircuitBreaker", () => {
@@ -73,6 +78,22 @@ describe("StreamCircuitBreaker", () => {
 
   it("takes a configurable threshold", () => {
     expect(new StreamCircuitBreaker({ threshold: 3 }).threshold).toBe(3);
+  });
+
+  it("normalizes invalid threshold and probe interval values", () => {
+    const breaker = new StreamCircuitBreaker({ threshold: 0, probeIntervalMs: -1, emit: () => {} });
+    expect(breaker.threshold).toBe(1);
+    expect(breaker.probeIntervalMs).toBe(0);
+  });
+
+  it("only enters half-open from the open state", () => {
+    const breaker = new StreamCircuitBreaker({ threshold: 1, emit: () => {} });
+    breaker.beginProbe();
+    expect(breaker.state).toBe("closed");
+    breaker.recordPersistentFailure(new Error("persistent"));
+    breaker.beginProbe();
+    breaker.beginProbe();
+    expect(breaker.state).toBe("half_open");
   });
 
   it("never opens on retriable failures, no matter how many", () => {

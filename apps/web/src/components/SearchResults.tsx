@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Post, PostCard, PostCardSkeleton } from "./PostCard";
 import { Profile, ProfileCard } from "./ProfileCard";
 
@@ -34,13 +35,7 @@ export function SearchResults({
   const hasProfileResults = profiles.length > 0;
 
   if (!hasQuery) {
-    return (
-      <div className="rounded-xl border border-[var(--border)] bg-[var(--muted)] px-6 py-12 text-center">
-        <p className="text-sm text-[var(--text-muted)]">
-          Enter a search term to find posts and profiles.
-        </p>
-      </div>
-    );
+    return null;
   }
 
   if (error) {
@@ -61,7 +56,14 @@ export function SearchResults({
           Array.from({ length: 5 }, (_, i) => <PostCardSkeleton key={i} />)}
 
         {!loading && hasPostResults &&
-          posts.map((post) => <PostCard key={post.id} post={post} query={query} />)}
+          posts.map((post) => (
+            <div key={post.id}>
+              <PostCard post={post} query={query} />
+              <Link href={`/posts/${post.id}`} className="sr-only">
+                View post by {post.username ?? post.author}
+              </Link>
+            </div>
+          ))}
 
         {!loading && !hasPostResults && (
           <EmptyState query={query} kind="posts" />
@@ -76,9 +78,14 @@ export function SearchResults({
         <ProfileListSkeleton />
       )}
 
-      {!loading && hasProfileResults &&
+        {!loading && hasProfileResults &&
         profiles.map((profile) => (
-          <ProfileCard key={profile.address} profile={profile} />
+          <div key={profile.address}>
+            <ProfileCard profile={profile} />
+            <Link href={`/profile/${profile.address}`} className="sr-only">
+              View profile {profile.username ?? profile.address}
+            </Link>
+          </div>
         ))}
 
       {!loading && !hasProfileResults && (

@@ -267,7 +267,23 @@ importers:
         version: 9.1.0
 
   packages/analytics:
+    dependencies:
+      pg:
+        specifier: ^8.23.0
+        version: 8.23.0
     devDependencies:
+      "@types/jest":
+        specifier: ^29.5.14
+        version: 29.5.14
+      "@types/pg":
+        specifier: ^8.23.1
+        version: 8.23.1
+      jest:
+        specifier: ^29.7.0
+        version: 29.7.0(@types/node@20.17.57)(ts-node@10.9.2(@types/node@20.17.57)(typescript@5.9.3))
+      ts-jest:
+        specifier: ^29.4.14
+        version: 29.4.14(@babel/core@7.29.7)(@jest/transform@30.4.1)(@jest/types@30.4.1)(babel-jest@30.4.1(@babel/core@7.29.7))(jest-util@30.4.1)(jest@29.7.0(@types/node@20.17.57)(ts-node@10.9.2(@types/node@20.17.57)(typescript@5.9.3)))(typescript@5.9.3)
       typescript:
         specifier: ^5.8.3
         version: 5.9.3
@@ -532,6 +548,9 @@ importers:
 
   services/indexer:
     dependencies:
+      "@linkora/reputation":
+        specifier: workspace:*
+        version: link:../../packages/reputation
       "@linkora/types":
         specifier: workspace:*
         version: link:../../packages/types

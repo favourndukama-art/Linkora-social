@@ -22,10 +22,54 @@ import { backfillStartupGap, type BatchProcessor } from "./stream";
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
-const PEERS: string[] = (process.env["INDEXER_PEERS"] ?? "")
-  .split(",")
-  .map((p) => p.trim())
-  .filter(Boolean);
+export function parsePeerList(value: string): string[] {
+  const peers = new Set<string>();
+  for (const candidate of value.split(",")) {
+    const peer = candidate.trim().replace(/\/$/, "");
+    if (!peer) continue;
+    try {
+      const url = new URL(peer);
+      if (url.protocol === "http:" || url.protocol === "https:") peers.add(url.origin);
+    } catch {
+      // Invalid peer entries are ignored so one malformed setting cannot stop the indexer.
+    }
+  }
+  return [...peers];
+}
+
+export const DEFAULT_PEER_OBSERVATION_TTL_MS = 30_000;
+
+/** Suppress duplicate peer root announcements for a bounded TTL. */
+export class PeerObservationCache {
+  private readonly entries = new Map<string, number>();
+
+  constructor(
+    readonly ttlMs = DEFAULT_PEER_OBSERVATION_TTL_MS,
+    private readonly maxEntries = 10_000,
+  ) {}
+
+  shouldProcess(peer: string, state: PeerStateRoot, now = Date.now()): boolean {
+    for (const [key, expiresAt] of this.entries) {
+      if (expiresAt <= now) this.entries.delete(key);
+    }
+    const key = `${peer}\0${state.ledger}\0${state.root}`;
+    const expiresAt = this.entries.get(key);
+    if (expiresAt !== undefined && expiresAt > now) return false;
+    this.entries.delete(key);
+    this.entries.set(key, now + this.ttlMs);
+    while (this.entries.size > this.maxEntries) {
+      const oldest = this.entries.keys().next().value;
+      if (oldest === undefined) break;
+      this.entries.delete(oldest);
+    }
+    return true;
+  }
+}
+
+const PEERS: string[] = parsePeerList(process.env["INDEXER_PEERS"] ?? "");
+const peerObservationCache = new PeerObservationCache(
+  Math.max(1, parseInt(process.env["GOSSIP_MESSAGE_TTL_MS"] ?? "30000", 10) || 30_000),
+);
 
 const DIVERGENCE_THRESHOLD = parseInt(process.env["DIVERGENCE_THRESHOLD"] ?? "2", 10);
 const GOSSIP_INTERVAL_MS = parseInt(process.env["GOSSIP_INTERVAL_MS"] ?? "5000", 10);
@@ -250,6 +294,7 @@ export async function startGossip(
       for (const peer of PEERS) {
         const peerState = await fetchPeerRoot(peer, localLedger);
         if (!peerState) continue; // peer unreachable — skip
+        if (!peerObservationCache.shouldProcess(peer, peerState)) continue;
 
         if (peerState.root !== localRoot) {
           disagreements++;

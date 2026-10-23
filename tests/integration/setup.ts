@@ -44,6 +44,7 @@ export const TEST_CONFIG = {
   horizonUrl: process.env.E2E_HORIZON_URL || "http://localhost:8000",
   indexerUrl: process.env.E2E_INDEXER_URL || "http://localhost:3000",
   relayUrl: process.env.E2E_RELAY_URL || "http://localhost:3001",
+  notificationUrl: process.env.E2E_NOTIFICATION_URL || "http://localhost:3002",
   networkPassphrase: process.env.E2E_NETWORK_PASSPHRASE || "Standalone Network ; February 2017",
   contractId: process.env.CONTRACT_ID || "",
   tokenId: process.env.TOKEN_ID || "",

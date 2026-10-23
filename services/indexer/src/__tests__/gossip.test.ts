@@ -9,6 +9,25 @@
 
 import { Pool as PgPool } from "pg";
 
+describe("gossip peer discovery and message deduplication", () => {
+  it("normalizes valid peers and ignores malformed or duplicate entries", async () => {
+    const { parsePeerList } = await import("../gossip");
+    expect(parsePeerList(" http://peer-a:3001/,https://peer-b,not-a-url,http://peer-a:3001 "))
+      .toEqual(["http://peer-a:3001", "https://peer-b"]);
+  });
+
+  it("suppresses duplicate roots until their TTL expires", async () => {
+    const { PeerObservationCache } = await import("../gossip");
+    const cache = new PeerObservationCache(100);
+    const root = { ledger: 10, root: "abc" };
+
+    expect(cache.shouldProcess("http://peer-a", root, 1_000)).toBe(true);
+    expect(cache.shouldProcess("http://peer-a", root, 1_050)).toBe(false);
+    expect(cache.shouldProcess("http://peer-b", root, 1_050)).toBe(true);
+    expect(cache.shouldProcess("http://peer-a", root, 1_100)).toBe(true);
+  });
+});
+
 /** Build a minimal PgPool mock that returns a given latest state root row. */
 function buildPgMock(ledger: number, root: string): PgPool {
   const mockQuery = jest.fn().mockResolvedValue({

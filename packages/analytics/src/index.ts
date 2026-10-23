@@ -1,8 +1,8 @@
 /**
  * @linkora/analytics
  *
- * On-chain analytics primitives for the Linkora protocol.
- * This package is a stub — implementation is in progress.
+ * Analytics aggregation primitives for Linkora services.
  */
 
-export {};
+export { ANALYTICS_FUNNELS, getFunnelMetrics, UnknownFunnelError } from "./funnel";
+export type { AnalyticsQueryPool, FunnelName, FunnelResult, FunnelStepResult } from "./funnel";
